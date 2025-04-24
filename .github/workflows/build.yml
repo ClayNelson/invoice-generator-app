@@ -113,16 +113,75 @@ jobs:
       run: |
         pyinstaller --clean --windowed --name "InvoiceGenerator-${{ matrix.arch }}" invoice_app.py
 
-    - name: Create ZIP archive
+    - name: Import Code-Signing Certificates
+      env:
+        CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE }}
+        CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+        KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
       run: |
-        cd dist
-        zip -r "InvoiceGenerator-${{ matrix.arch }}.zip" "InvoiceGenerator-${{ matrix.arch }}"
+        # Create keychain
+        security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+        security default-keychain -s build.keychain
+        security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+        
+        # Import certificate
+        echo "$CERTIFICATE_BASE64" | base64 --decode > certificate.p12
+        security import certificate.p12 -k build.keychain -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+        
+        # Clean up
+        rm certificate.p12
+
+    - name: Sign Application
+      env:
+        APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      run: |
+        # Sign the app bundle
+        codesign --force --options runtime --sign "Developer ID Application: $APPLE_TEAM_ID" \
+          --timestamp --verbose "dist/InvoiceGenerator-${{ matrix.arch }}/InvoiceGenerator-${{ matrix.arch }}.app"
+        
+        # Verify signature
+        codesign --verify --verbose "dist/InvoiceGenerator-${{ matrix.arch }}/InvoiceGenerator-${{ matrix.arch }}.app"
+
+    - name: Create DMG
+      run: |
+        # Create a temporary DMG
+        hdiutil create -srcfolder "dist/InvoiceGenerator-${{ matrix.arch }}" \
+          -volname "InvoiceGenerator-${{ matrix.arch }}" \
+          -fs HFS+ \
+          -fsargs "-c c=64,a=16,e=16" \
+          -format UDRW \
+          "dist/InvoiceGenerator-${{ matrix.arch }}.dmg"
+
+    - name: Sign DMG
+      env:
+        APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      run: |
+        # Sign the DMG
+        codesign --force --sign "Developer ID Application: $APPLE_TEAM_ID" \
+          --timestamp --verbose "dist/InvoiceGenerator-${{ matrix.arch }}.dmg"
+
+    - name: Notarize
+      env:
+        APPLE_ID: ${{ secrets.APPLE_ID }}
+        APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      run: |
+        # Submit for notarization
+        xcrun notarytool submit "dist/InvoiceGenerator-${{ matrix.arch }}.dmg" \
+          --apple-id "$APPLE_ID" \
+          --password "$APPLE_APP_PASSWORD" \
+          --team-id "$APPLE_TEAM_ID" \
+          --wait
+        
+        # Staple the notarization ticket
+        xcrun stapler staple "dist/InvoiceGenerator-${{ matrix.arch }}.dmg"
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: InvoiceGenerator-${{ matrix.arch }}
-        path: dist/InvoiceGenerator-${{ matrix.arch }}.zip
+        path: dist/InvoiceGenerator-${{ matrix.arch }}.dmg
         retention-days: 5
         
   create-release:
@@ -145,8 +204,8 @@ jobs:
         tag_name: v${{ github.run_number }}
         name: Release v${{ github.run_number }}
         files: |
-          InvoiceGenerator-intel/*.zip
-          InvoiceGenerator-arm64/*.zip
+          InvoiceGenerator-intel/*.dmg
+          InvoiceGenerator-arm64/*.dmg
         prerelease: ${{ github.ref == 'refs/heads/develop' }}
         token: ${{ secrets.GITHUB_TOKEN }}
         draft: false
