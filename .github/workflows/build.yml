@@ -61,8 +61,8 @@ jobs:
         name: invoice-generator
         fail_ci_if_error: false
         verbose: true
-        retry_on_error: true
-        max_retry_attempts: 3
+        directory: .
+        token: ${{ secrets.CODECOV_TOKEN }}
 
   build-macos:
     needs: test
