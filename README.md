@@ -1,57 +1,78 @@
 # Invoice Generator
 
-A professional invoice generation application with a modern user interface.
+[![Build and Test](https://github.com/ClayNelson/invoice-generator-app/actions/workflows/build.yml/badge.svg)](https://github.com/ClayNelson/invoice-generator-app/actions/workflows/build.yml)
+[![codecov](https://codecov.io/gh/ClayNelson/invoice-generator-app/branch/main/graph/badge.svg)](https://codecov.io/gh/ClayNelson/invoice-generator-app)
+
+A professional invoice generator application built with PyQt6. Create, customize, and export beautiful invoices with ease.
 
 ## Features
-- Easy-to-use graphical interface
-- Company profile management with logo
+
+- Modern and intuitive GUI interface
+- Company profile management with logo support
 - Customer information management
-- Multiple invoice items with automatic total calculation
+- Dynamic item addition and total calculation
 - Professional PDF invoice generation
-- Settings persistence between sessions
+- Cross-platform support (Intel and Apple Silicon Macs)
 
 ## Installation
 
-### Option 1: Run the Executable (Recommended for testing)
-1. Download the `InvoiceGenerator.zip` file
-2. Extract the contents
-3. Double-click the `InvoiceGenerator` application
+### Download Pre-built Binaries
 
-### Option 2: Run from Source
-If you want to run from source code, you'll need Python 3.8 or newer installed.
+1. Go to the [Releases](https://github.com/ClayNelson/invoice-generator-app/releases) page
+2. Download the appropriate version for your system:
+   - `InvoiceGenerator-intel.zip` for Intel Macs
+   - `InvoiceGenerator-arm64.zip` for Apple Silicon Macs
+3. Extract the ZIP file
+4. Run the application
 
-1. Clone or download this repository
-2. Install the required packages:
+### Build from Source
+
 ```bash
+# Clone the repository
+git clone https://github.com/ClayNelson/invoice-generator-app.git
+cd invoice-generator-app
+
+# Install dependencies
 pip install -r requirements.txt
-```
-3. Run the application:
-```bash
+
+# Run the application
 python invoice_app.py
 ```
 
-## Usage
+## Development
 
-1. First Time Setup:
-   - Go to File → Company Settings
-   - Enter your company information
-   - Upload your company logo (optional)
-   - Click OK to save
+### Setup Development Environment
 
-2. Creating an Invoice:
-   - Click "New Invoice"
-   - Enter customer information in the popup
-   - Add items using the "Add Item" button
-   - Enter item details (name, price, quantity)
-   - The total updates automatically
-   - Click "Generate Invoice" to create the PDF
+```bash
+# Install development dependencies
+pip install -r requirements.txt
 
-3. Generated invoices will be saved in the same folder as the application
+# Run tests
+pytest tests/ -v
+```
 
-## Known Limitations
-- The application stores settings locally in the same directory
-- Generated PDFs are saved in the application directory
-- Company logo should be a reasonable size (recommended: 300x150 pixels or smaller)
+### Testing
 
-## Support
-For support or bug reports, please contact [Your Contact Information]
+The project uses pytest for testing. Run the test suite:
+
+```bash
+pytest tests/ -v
+```
+
+To run tests with coverage:
+
+```bash
+pytest tests/ --cov=. --cov-report=html
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

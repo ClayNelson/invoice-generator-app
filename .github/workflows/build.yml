@@ -13,6 +13,8 @@ jobs:
     
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 2
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -44,11 +46,16 @@ jobs:
         sleep 3
         pytest tests/ --cov=. --cov-report=xml -v
 
-    - name: Upload coverage to Codecov
+    - name: Upload coverage reports to Codecov
       uses: codecov/codecov-action@v4
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       with:
-        file: ./coverage.xml
-        fail_ci_if_error: true
+        files: ./coverage.xml
+        flags: unittests
+        name: invoice-generator
+        fail_ci_if_error: false
+        verbose: true
 
   build-macos:
     needs: test
