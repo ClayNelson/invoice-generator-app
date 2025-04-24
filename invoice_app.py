@@ -229,16 +229,20 @@ class InvoiceApp(QMainWindow):
             self.save_settings(self.company_settings)
     
     def new_invoice(self):
-        dialog = CustomerDialog(self)
-        if dialog.exec():
-            self.customer_info = dialog.get_customer_info()
-            # Clear existing items
-            for i in reversed(range(self.items_container.count())): 
-                self.items_container.itemAt(i).widget().deleteLater()
-            self.items = []
-            self.add_item_row()
-            self.update_total()
-    
+        # Clear all items
+        for name, price, qty in self.items:
+            name.deleteLater()
+            price.deleteLater()
+            qty.deleteLater()
+        self.items.clear()
+        
+        # Reset customer info
+        self.customer_info = None
+        
+        # Add one empty row
+        self.add_item_row()
+        self.update_total()
+
     def add_item_row(self):
         row = QWidget()
         layout = QHBoxLayout(row)

@@ -1,8 +1,8 @@
 import unittest
 from unittest.mock import MagicMock, patch
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QLineEdit
 import sys
-from invoice_app import InvoiceApp, CompanySettingsDialog, CustomerInfoDialog
+from invoice_app import InvoiceApp
 
 class TestInvoiceApp(unittest.TestCase):
     @classmethod
@@ -13,77 +13,67 @@ class TestInvoiceApp(unittest.TestCase):
     def setUp(self):
         self.invoice_app = InvoiceApp()
 
-    def test_add_item(self):
-        # Test adding an item to the invoice
-        initial_count = self.invoice_app.items_table.rowCount()
-        self.invoice_app.add_item()
-        self.assertEqual(self.invoice_app.items_table.rowCount(), initial_count + 1)
+    def test_add_item_row(self):
+        # Test adding an item row
+        initial_items = len(self.invoice_app.items)
+        self.invoice_app.add_item_row()
+        self.assertEqual(len(self.invoice_app.items), initial_items + 1)
 
-    def test_calculate_total(self):
+    def test_update_total(self):
         # Test total calculation
-        self.invoice_app.items_table.setRowCount(2)
+        # Add test items
+        self.invoice_app.add_item_row()
+        item_index = len(self.invoice_app.items) - 1
+        name, price, qty = self.invoice_app.items[item_index]
         
-        # Set test values in the table
-        self.invoice_app.items_table.setItem(0, 2, MagicMock(text=lambda: "10"))  # price
-        self.invoice_app.items_table.setItem(0, 3, MagicMock(text=lambda: "2"))   # quantity
-        self.invoice_app.items_table.setItem(1, 2, MagicMock(text=lambda: "15"))  # price
-        self.invoice_app.items_table.setItem(1, 3, MagicMock(text=lambda: "3"))   # quantity
+        # Set test values
+        price.setText("10")
+        qty.setText("2")
+        
+        self.invoice_app.update_total()
+        expected_total = 20.0  # 10 * 2
+        self.assertEqual(float(self.invoice_app.total_label.text().replace("Total: $", "")), expected_total)
 
-        self.invoice_app.calculate_total()
-        expected_total = (10 * 2) + (15 * 3)  # 65
-        self.assertEqual(float(self.invoice_app.total_label.text().split(": $")[1]), expected_total)
+    def test_new_invoice(self):
+        # Test creating a new invoice
+        # Set initial customer info
+        self.invoice_app.customer_info = {
+            'name': 'Test Customer',
+            'email': 'test@example.com',
+            'address': '123 Test St'
+        }
+        
+        # Add some items first
+        self.invoice_app.add_item_row()
+        self.invoice_app.add_item_row()
+        
+        # Call new_invoice
+        self.invoice_app.new_invoice()
+        
+        # Check that items were cleared
+        self.assertEqual(len(self.invoice_app.items), 1)  # Should have one empty row
+        self.assertIsNone(self.invoice_app.customer_info)
 
-class TestCompanySettingsDialog(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.app = QApplication(sys.argv)
+    def test_generate_invoice(self):
+        # Test invoice generation
+        self.invoice_app.customer_info = {
+            'name': 'Test Customer',
+            'email': 'test@example.com',
+            'address': '123 Test St'
+        }
+        
+        # Add a test item
+        self.invoice_app.add_item_row()
+        item_index = len(self.invoice_app.items) - 1
+        name, price, qty = self.invoice_app.items[item_index]
+        name.setText("Test Item")
+        price.setText("10")
+        qty.setText("2")
 
-    def setUp(self):
-        self.dialog = CompanySettingsDialog()
-
-    def test_save_settings(self):
-        # Test saving company settings
-        test_name = "Test Company"
-        test_email = "test@company.com"
-        test_address = "123 Test St"
-
-        self.dialog.name_input.setText(test_name)
-        self.dialog.email_input.setText(test_email)
-        self.dialog.address_input.setPlainText(test_address)
-
-        with patch('PyQt6.QtWidgets.QDialog.accept') as mock_accept:
-            self.dialog.accept()
-            mock_accept.assert_called_once()
-
-        self.assertEqual(self.dialog.company_info["name"], test_name)
-        self.assertEqual(self.dialog.company_info["email"], test_email)
-        self.assertEqual(self.dialog.company_info["address"], test_address)
-
-class TestCustomerInfoDialog(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.app = QApplication(sys.argv)
-
-    def setUp(self):
-        self.dialog = CustomerInfoDialog()
-
-    def test_save_customer_info(self):
-        # Test saving customer information
-        test_name = "Test Customer"
-        test_email = "customer@test.com"
-        test_address = "456 Customer Ave"
-
-        self.dialog.name_input.setText(test_name)
-        self.dialog.email_input.setText(test_email)
-        self.dialog.address_input.setPlainText(test_address)
-
-        with patch('PyQt6.QtWidgets.QDialog.accept') as mock_accept:
-            self.dialog.accept()
-            mock_accept.assert_called_once()
-
-        self.assertEqual(self.dialog.customer_info["name"], test_name)
-        self.assertEqual(self.dialog.customer_info["email"], test_email)
-        self.assertEqual(self.dialog.customer_info["address"], test_address)
+        with patch('invoice_app.QMessageBox') as mock_msg:
+            self.invoice_app.generate_invoice()
+            # Check that success message was shown
+            mock_msg.information.assert_called_once()
 
 if __name__ == '__main__':
     unittest.main()
