@@ -155,25 +155,22 @@ jobs:
 
     - name: Import Code-Signing Certificates
       env:
-        CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE }}
-        CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
-        KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        CERTIFICATE_BASE64: ${{ secrets.CERT_P12_BASE64 }}
+        CERTIFICATE_PASSWORD: ${{ secrets.CERT_PASSWORD }}
       run: |
         # Validate required secrets
         if [ -z "$CERTIFICATE_BASE64" ]; then
-          echo "Error: MACOS_CERTIFICATE secret is not set"
+          echo "Error: CERT_P12_BASE64 secret is not set"
           exit 1
         fi
         
         if [ -z "$CERTIFICATE_PASSWORD" ]; then
-          echo "Error: MACOS_CERTIFICATE_PWD secret is not set"
+          echo "Error: CERT_PASSWORD secret is not set"
           exit 1
         fi
         
-        # Generate a random keychain password if not provided
-        if [ -z "$KEYCHAIN_PASSWORD" ]; then
-          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
-        fi
+        # Generate a random keychain password
+        KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
         
         # Create temporary keychain
         KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
@@ -217,12 +214,10 @@ jobs:
         echo "Certificate import completed successfully"
 
     - name: Sign Application
-      env:
-        APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       run: |
         APP_NAME="InvoiceGenerator-${{ matrix.arch }}-${{ env.APP_VERSION }}-${{ github.run_number }}"
         # Sign the app bundle
-        codesign --force --options runtime --sign "Developer ID Application: $APPLE_TEAM_ID" \
+        codesign --force --options runtime --sign "Developer ID Application" \
           --timestamp --verbose "dist/$APP_NAME/$APP_NAME.app"
         
         # Verify signature
@@ -240,12 +235,10 @@ jobs:
           "dist/$APP_NAME.dmg"
 
     - name: Sign DMG
-      env:
-        APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       run: |
         APP_NAME="InvoiceGenerator-${{ matrix.arch }}-${{ env.APP_VERSION }}-${{ github.run_number }}"
         # Sign the DMG
-        codesign --force --sign "Developer ID Application: $APPLE_TEAM_ID" \
+        codesign --force --sign "Developer ID Application" \
           --timestamp --verbose "dist/$APP_NAME.dmg"
 
     - name: Notarize
@@ -255,6 +248,13 @@ jobs:
         APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       run: |
         APP_NAME="InvoiceGenerator-${{ matrix.arch }}-${{ env.APP_VERSION }}-${{ github.run_number }}"
+        
+        # Check if we have notarization credentials
+        if [ -z "$APPLE_ID" ] || [ -z "$APPLE_APP_PASSWORD" ] || [ -z "$APPLE_TEAM_ID" ]; then
+          echo "Warning: Notarization credentials not set, skipping notarization"
+          exit 0
+        fi
+        
         # Submit for notarization
         xcrun notarytool submit "dist/$APP_NAME.dmg" \
           --apple-id "$APPLE_ID" \
