@@ -200,7 +200,14 @@ jobs:
           }
         fi
         
-        echo "Certificate decoded, attempting import"
+        echo "Verifying certificate with OpenSSL"
+        if ! openssl pkcs12 -in "$CERT_PATH" -noout -info -password pass:"$CERTIFICATE_PASSWORD"; then
+          echo "Error: OpenSSL verification failed"
+          echo "This indicates the certificate or password is invalid"
+          exit 1
+        fi
+        
+        echo "Certificate verified with OpenSSL, attempting import"
         # Try import with explicit format
         if ! security import "$CERT_PATH" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"; then
           echo "First import attempt failed, trying without format specification"
@@ -210,6 +217,9 @@ jobs:
             echo "Certificate path: $CERT_PATH"
             echo "Keychain path: $KEYCHAIN_PATH"
             ls -l "$CERT_PATH"
+            # Try to show certificate info
+            echo "Certificate details:"
+            security cms -D -i "$CERT_PATH" 2>&1 || true
             exit 1
           }
         fi
@@ -227,6 +237,7 @@ jobs:
         }
         
         # Verify certificate was imported
+        echo "Listing all certificates in keychain:"
         security find-certificate -a "$KEYCHAIN_PATH"
         
         # Clean up
