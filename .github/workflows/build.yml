@@ -159,25 +159,62 @@ jobs:
         CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
         KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
       run: |
+        # Validate required secrets
+        if [ -z "$CERTIFICATE_BASE64" ]; then
+          echo "Error: MACOS_CERTIFICATE secret is not set"
+          exit 1
+        fi
+        
+        if [ -z "$CERTIFICATE_PASSWORD" ]; then
+          echo "Error: MACOS_CERTIFICATE_PWD secret is not set"
+          exit 1
+        fi
+        
+        # Generate a random keychain password if not provided
+        if [ -z "$KEYCHAIN_PASSWORD" ]; then
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+        fi
+        
         # Create temporary keychain
         KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
-        security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+        echo "Creating keychain at $KEYCHAIN_PATH"
+        security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" || {
+          echo "Error: Failed to create keychain"
+          exit 1
+        }
+        
+        echo "Setting keychain settings"
         security set-keychain-settings -t 3600 -l "$KEYCHAIN_PATH"
         
         # Import certificate to keychain
-        echo -n "$CERTIFICATE_BASE64" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
-        security import "$RUNNER_TEMP/certificate.p12" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+        echo "Decoding certificate"
+        CERT_PATH="$RUNNER_TEMP/certificate.p12"
+        echo -n "$CERTIFICATE_BASE64" | base64 --decode > "$CERT_PATH" || {
+          echo "Error: Failed to decode certificate"
+          exit 1
+        }
         
+        echo "Importing certificate"
+        security import "$CERT_PATH" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH" || {
+          echo "Error: Failed to import certificate"
+          exit 1
+        }
+        
+        echo "Setting up keychain for codesign"
         # Add keychain to search list
         security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | sed s/\"//g)
         security default-keychain -s "$KEYCHAIN_PATH"
         security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
         
         # Allow codesign to access keychain
-        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" || {
+          echo "Error: Failed to set key partition list"
+          exit 1
+        }
         
         # Clean up
-        rm "$RUNNER_TEMP/certificate.p12"
+        rm "$CERT_PATH"
+        echo "Certificate import completed successfully"
 
     - name: Sign Application
       env:
