@@ -186,16 +186,33 @@ jobs:
         # Import certificate to keychain
         echo "Decoding certificate"
         CERT_PATH="$RUNNER_TEMP/certificate.p12"
-        echo -n "$CERTIFICATE_BASE64" | base64 --decode > "$CERT_PATH" || {
-          echo "Error: Failed to decode certificate"
-          exit 1
-        }
         
-        echo "Importing certificate"
-        security import "$CERT_PATH" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH" || {
-          echo "Error: Failed to import certificate"
-          exit 1
-        }
+        # Try to handle both standard and URL-safe base64
+        # First, try direct decoding
+        if echo -n "$CERTIFICATE_BASE64" | base64 --decode > "$CERT_PATH" 2>/dev/null; then
+          echo "Standard base64 decode successful"
+        else
+          echo "Standard base64 decode failed, trying URL-safe conversion"
+          # Replace URL-safe characters and try again
+          echo -n "$CERTIFICATE_BASE64" | tr '_-' '/+' | base64 --decode > "$CERT_PATH" || {
+            echo "Error: Failed to decode certificate (both standard and URL-safe attempts failed)"
+            exit 1
+          }
+        fi
+        
+        echo "Certificate decoded, attempting import"
+        # Try import with explicit format
+        if ! security import "$CERT_PATH" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"; then
+          echo "First import attempt failed, trying without format specification"
+          # Try import without format specification
+          security import "$CERT_PATH" -P "$CERTIFICATE_PASSWORD" -k "$KEYCHAIN_PATH" || {
+            echo "Error: Failed to import certificate"
+            echo "Certificate path: $CERT_PATH"
+            echo "Keychain path: $KEYCHAIN_PATH"
+            ls -l "$CERT_PATH"
+            exit 1
+          }
+        fi
         
         echo "Setting up keychain for codesign"
         # Add keychain to search list
@@ -208,6 +225,9 @@ jobs:
           echo "Error: Failed to set key partition list"
           exit 1
         }
+        
+        # Verify certificate was imported
+        security find-certificate -a "$KEYCHAIN_PATH"
         
         # Clean up
         rm "$CERT_PATH"
