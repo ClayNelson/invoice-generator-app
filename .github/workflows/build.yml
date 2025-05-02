@@ -174,22 +174,24 @@ jobs:
         echo "Team ID: $APPLE_TEAM_ID"
         echo "App password length: ${#APPLE_APP_PASSWORD}"
         
-        echo "Notarization credentials:"
-        echo "Apple ID: $APPLE_ID"
-        echo "Team ID: $APPLE_TEAM_ID"
-        echo "App password length: ${#APPLE_APP_PASSWORD}"
+        echo "Checking dist directory structure..."
+        ls -R dist/
         
-        # Verify app exists
-        if [ ! -d "InvoiceGenerator-${{ matrix.arch }}.app" ]; then
+        # Find the .app bundle
+        APP_PATH=$(find dist -name "InvoiceGenerator-${{ matrix.arch }}.app" -type d)
+        if [ -z "$APP_PATH" ]; then
           echo "Error: InvoiceGenerator-${{ matrix.arch }}.app not found"
           echo "Contents of dist directory:"
-          ls -la
+          ls -la dist
           exit 1
         fi
         
+        echo "Found app bundle at: $APP_PATH"
+        cd $(dirname "$APP_PATH")
+        
         echo "Creating notarization package..."
         # Create ZIP for notarization
-        ditto -c -k --keepParent "InvoiceGenerator-${{ matrix.arch }}.app" "InvoiceGenerator-${{ matrix.arch }}-unnotarized.zip"
+        ditto -c -k --keepParent "$(basename "$APP_PATH")" "InvoiceGenerator-${{ matrix.arch }}-unnotarized.zip"
         
         if [ ! -f "InvoiceGenerator-${{ matrix.arch }}-unnotarized.zip" ]; then
           echo "Error: Failed to create notarization package"
@@ -228,7 +230,7 @@ jobs:
         
         echo "Stapling notarization ticket..."
         # Staple the notarization ticket
-        xcrun stapler staple "InvoiceGenerator-${{ matrix.arch }}.app"
+        xcrun stapler staple "$(basename "$APP_PATH")"
         
         if [ $? -ne 0 ]; then
           echo "Error: Failed to staple notarization ticket"
@@ -237,7 +239,7 @@ jobs:
         
         echo "Creating final package..."
         # Create final ZIP
-        ditto -c -k --keepParent "InvoiceGenerator-${{ matrix.arch }}.app" "InvoiceGenerator-${{ matrix.arch }}.zip"
+        ditto -c -k --keepParent "$(basename "$APP_PATH")" "InvoiceGenerator-${{ matrix.arch }}.zip"
         
         if [ ! -f "InvoiceGenerator-${{ matrix.arch }}.zip" ]; then
           echo "Error: Failed to create final package"
