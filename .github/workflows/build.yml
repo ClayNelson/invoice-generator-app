@@ -147,7 +147,7 @@ jobs:
     - name: Notarize the app
       env:
         APPLE_ID: ${{ secrets.APPLE_ID }}
-        APPLE_TEAM_ID: "FP8F8A7LL3"
+        APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
       run: |
         # Validate credentials
@@ -164,7 +164,8 @@ jobs:
         fi
         
         if [ -z "$APPLE_TEAM_ID" ]; then
-          echo "Error: APPLE_TEAM_ID is not set"
+          echo "Error: APPLE_TEAM_ID repository secret is not set"
+          echo "Please add this in GitHub repository Settings -> Secrets and variables -> Actions"
           exit 1
         fi
         
