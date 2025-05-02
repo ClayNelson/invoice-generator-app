@@ -144,10 +144,13 @@ jobs:
     - name: Notarize the app
       env:
         APPLE_ID: ${{ secrets.APPLE_ID }}
-        APPLE_TEAM_ID: "FP8F8A7LL3"  # Temporary hardcoded for testing
-        APPLE_APP_PASSWORD: ${{ secrets.appleapppassword }}
+        APPLE_TEAM_ID: "FP8F8A7LL3"
+        APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
       run: |
-        echo "Using Team ID for notarization: $APPLE_TEAM_ID"
+        echo "Using Apple ID: $APPLE_ID"
+        echo "Using Team ID: $APPLE_TEAM_ID"
+        echo "App password length: ${#APPLE_APP_PASSWORD}"
+        
         cd dist
         # Create ZIP for notarization
         ditto -c -k --keepParent "InvoiceGenerator-${{ matrix.arch }}.app" "InvoiceGenerator-${{ matrix.arch }}-unnotarized.zip"
