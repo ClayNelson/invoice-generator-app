@@ -69,12 +69,33 @@ jobs:
         security default-keychain -s build.keychain
         security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
         
-        # Import certificate
-        echo $CERTIFICATE_BASE64 | base64 --decode > certificate.p12
-        security import certificate.p12 -k build.keychain -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+        # Set keychain settings
+        security set-keychain-settings -t 3600 -l build.keychain
         
-        # Allow codesign to access keychain
-        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+        # Import certificate with debug info
+        echo "Creating certificate file..."
+        echo "$CERTIFICATE_BASE64" | base64 --decode > certificate.p12
+        
+        echo "Checking certificate file..."
+        ls -la certificate.p12
+        
+        echo "Importing certificate..."
+        security import certificate.p12 \
+          -k build.keychain \
+          -P "$CERTIFICATE_PASSWORD" \
+          -T /usr/bin/codesign \
+          -f pkcs12 \
+          -A
+        
+        echo "Setting partition list..."
+        security set-key-partition-list \
+          -S apple-tool:,apple:,codesign: \
+          -s \
+          -k "$KEYCHAIN_PASSWORD" \
+          build.keychain
+        
+        echo "Listing keychains..."
+        security list-keychains
         
         # Clean up
         rm certificate.p12
@@ -83,6 +104,9 @@ jobs:
       env:
         TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       run: |
+        # List available signing identities
+        security find-identity -v -p codesigning
+        
         cd dist
         codesign --force --options runtime --sign "Developer ID Application: Clay NELSON ($TEAM_ID)" "InvoiceGenerator-${{ matrix.arch }}.app"
 
