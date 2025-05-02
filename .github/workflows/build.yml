@@ -72,52 +72,36 @@ jobs:
 
     - name: Install the Apple certificate
       env:
-        CERTIFICATE_BASE64: ${{ secrets.CERT_P12_BASE64 }}
+        CERTIFICATE_PATH: ${{ runner.temp }}/build_certificate.p12
+        KEYCHAIN_PATH: ${{ runner.temp }}/app-signing.keychain-db
         CERTIFICATE_PASSWORD: ${{ secrets.CERT_PASSWORD }}
-        KEYCHAIN_PASSWORD: ${{ github.run_id }}
+        CERTIFICATE_BASE64: ${{ secrets.CERT_P12_BASE64 }}
       run: |
-        echo "Setting up keychain..."
-        security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain || true
-        security default-keychain -s build.keychain
-        security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
-        security set-keychain-settings -t 3600 -l build.keychain
-        
-        echo "Creating certificate file..."
-        # Try to detect and fix potential line breaks in the base64 string
-        echo "$CERTIFICATE_BASE64" | tr -d '\n' | base64 --decode > certificate.p12
-        
-        echo "Verifying certificate file..."
-        if [ ! -s certificate.p12 ]; then
-          echo "Error: certificate.p12 is empty"
-          echo "Debug: CERTIFICATE_BASE64 value type:"
-          echo "$CERTIFICATE_BASE64" | base64 --decode | file -
+        if [ -z "$CERTIFICATE_BASE64" ]; then
+          echo "Error: CERT_P12_BASE64 repository secret is empty"
+          echo "Please add this in GitHub repository Settings -> Secrets and variables -> Actions"
           exit 1
         fi
+        echo "Certificate secret length: ${#CERTIFICATE_BASE64}"
         
-        echo "Certificate file size: $(ls -l certificate.p12 | awk '{print $5}') bytes"
-        echo "File type: $(file certificate.p12)"
+        # Create temporary keychain
+        security create-keychain -p "$CERTIFICATE_PASSWORD" "$KEYCHAIN_PATH"
+        security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+        security unlock-keychain -p "$CERTIFICATE_PASSWORD" "$KEYCHAIN_PATH"
         
-        echo "Current keychains:"
-        security list-keychains
+        # Import certificate to keychain
+        echo -n "$CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
+        security import "$CERTIFICATE_PATH" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
         
-        echo "Importing certificate..."
-        security import certificate.p12 \
-          -k build.keychain \
-          -P "$CERTIFICATE_PASSWORD" \
-          -T /usr/bin/codesign
+        # Allow codesign to access keychain
+        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$CERTIFICATE_PASSWORD" "$KEYCHAIN_PATH"
         
-        echo "Setting partition list..."
-        security set-key-partition-list \
-          -S apple-tool:,apple:,codesign: \
-          -s \
-          -k "$KEYCHAIN_PASSWORD" \
-          build.keychain
+        # Add keychain to search list
+        security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
         
-        echo "Verifying certificate installation..."
-        security find-certificate -a build.keychain
-        
-        echo "Cleaning up..."
-        rm certificate.p12
+        # Show imported certificates
+        echo "Listing certificates in keychain:"
+        security find-identity -v -p codesigning "$KEYCHAIN_PATH"
 
     - name: Debug Team ID
       run: |
