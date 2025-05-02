@@ -60,10 +60,10 @@ jobs:
 
     - name: Debug certificate secret
       env:
-        CERTIFICATE_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE }}
+        CERTIFICATE_BASE64: ${{ secrets.CERT_P12_BASE64 }}
       run: |
         if [ -z "$CERTIFICATE_BASE64" ]; then
-          echo "Error: APPLE_DEVELOPER_ID_CERTIFICATE secret is empty"
+          echo "Error: CERT_P12_BASE64 secret is empty"
           exit 1
         fi
         echo "Certificate secret length: ${#CERTIFICATE_BASE64}"
@@ -71,8 +71,8 @@ jobs:
 
     - name: Install the Apple certificate
       env:
-        CERTIFICATE_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE }}
-        CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_PASSWORD }}
+        CERTIFICATE_BASE64: ${{ secrets.CERT_P12_BASE64 }}
+        CERTIFICATE_PASSWORD: ${{ secrets.CERT_PASSWORD }}
         KEYCHAIN_PASSWORD: ${{ github.run_id }}
       run: |
         echo "Setting up keychain..."
