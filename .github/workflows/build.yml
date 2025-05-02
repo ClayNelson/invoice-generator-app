@@ -158,15 +158,53 @@ jobs:
         APP_PATH="dist/InvoiceGenerator-${{ matrix.arch }}.app"
         echo "Signing app bundle at: $APP_PATH"
         
-        # Sign all binaries and libraries
-        find "$APP_PATH" -type f -name "*.so" -o -name "*.dylib" | while read lib; do
+        # Sign Qt frameworks first
+        echo "Signing Qt frameworks..."
+        find "$APP_PATH/Contents/Frameworks/PyQt6/Qt6/lib" -type f -name "Qt*" | while read lib; do
+          echo "Signing Qt library: $lib"
+          codesign --force --options runtime \
+            --sign "$SIGNING_IDENTITY" \
+            --entitlements entitlements.plist \
+            --timestamp \
+            --verbose \
+            "$lib" 2>&1 || echo "Warning: Failed to sign $lib"
+        done
+        
+        # Sign framework versions
+        echo "Signing framework versions..."
+        find "$APP_PATH/Contents/Frameworks" -type f -path "*/Versions/*/Qt*" | while read lib; do
+          echo "Signing framework version: $lib"
+          codesign --force --options runtime \
+            --sign "$SIGNING_IDENTITY" \
+            --entitlements entitlements.plist \
+            --timestamp \
+            --verbose \
+            "$lib" 2>&1 || echo "Warning: Failed to sign $lib"
+        done
+        
+        # Sign all remaining binaries and libraries
+        echo "Signing remaining libraries..."
+        find "$APP_PATH" -type f \( -name "*.so" -o -name "*.dylib" \) | while read lib; do
           echo "Signing library: $lib"
           codesign --force --options runtime \
             --sign "$SIGNING_IDENTITY" \
             --entitlements entitlements.plist \
             --timestamp \
             --verbose \
-            "$lib" 2>&1
+            "$lib" 2>&1 || echo "Warning: Failed to sign $lib"
+        done
+        
+        # Sign framework bundles
+        echo "Signing framework bundles..."
+        find "$APP_PATH/Contents/Frameworks" -type d -name "*.framework" | while read framework; do
+          echo "Signing framework bundle: $framework"
+          codesign --force --options runtime \
+            --sign "$SIGNING_IDENTITY" \
+            --entitlements entitlements.plist \
+            --timestamp \
+            --deep \
+            --verbose \
+            "$framework" 2>&1 || echo "Warning: Failed to sign $framework"
         done
         
         # Sign the main executable
@@ -178,7 +216,7 @@ jobs:
             --entitlements entitlements.plist \
             --timestamp \
             --verbose \
-            "$MAIN_BIN" 2>&1
+            "$MAIN_BIN" 2>&1 || echo "Warning: Failed to sign $MAIN_BIN"
         fi
         
         # Finally sign the app bundle
@@ -187,6 +225,7 @@ jobs:
           --sign "$SIGNING_IDENTITY" \
           --entitlements entitlements.plist \
           --timestamp \
+          --deep \
           --verbose \
           "$APP_PATH" 2>&1
         
