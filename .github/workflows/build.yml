@@ -120,13 +120,13 @@ jobs:
 
     - name: Sign the app
       env:
-        TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        TEAM_ID: FP8F8A7LL3
       run: |
         echo "Available signing identities:"
         security find-identity -v -p codesigning
         
         cd dist
-        codesign --force --options runtime --sign "Developer ID Application: Clay NELSON ($TEAM_ID)" "InvoiceGenerator-${{ matrix.arch }}.app"
+        codesign --force --options runtime --sign "Developer ID Application: Clay Nelson (FP8F8A7LL3)" "InvoiceGenerator-${{ matrix.arch }}.app"
 
     - name: Notarize the app
       env:
