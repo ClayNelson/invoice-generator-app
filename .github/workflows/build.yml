@@ -196,8 +196,8 @@ jobs:
         echo "Detailed signing info:"
         codesign -d --verbose=4 "$APP_PATH"
         
-        echo "Checking app bundle..."
-        spctl --assess --verbose=4 "$APP_PATH"
+        echo "Checking app bundle (expected to fail before notarization)..."
+        spctl --assess --verbose=4 "$APP_PATH" || true
 
     - name: Notarize the app
       env:
