@@ -89,6 +89,9 @@ jobs:
         security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
         security unlock-keychain -p "$CERTIFICATE_PASSWORD" "$KEYCHAIN_PATH"
         
+        # Make it default keychain
+        security default-keychain -d user -s "$KEYCHAIN_PATH"
+        
         # Import certificate to keychain
         echo -n "$CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
         security import "$CERTIFICATE_PATH" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
@@ -96,12 +99,12 @@ jobs:
         # Allow codesign to access keychain
         security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$CERTIFICATE_PASSWORD" "$KEYCHAIN_PATH"
         
-        # Add keychain to search list
-        security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
-        
         # Show imported certificates
         echo "Listing certificates in keychain:"
         security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+        
+        # Clean up certificate file
+        rm -f "$CERTIFICATE_PATH"
 
     - name: Debug Team ID
       run: |
@@ -119,7 +122,6 @@ jobs:
 
     - name: Sign the app bundle
       env:
-        CERTIFICATE_PATH: ${{ runner.temp }}/build_certificate.p12
         KEYCHAIN_PATH: ${{ runner.temp }}/app-signing.keychain-db
         CERTIFICATE_PASSWORD: ${{ secrets.CERT_PASSWORD }}
         APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -140,58 +142,62 @@ jobs:
             <true/>
             <key>com.apple.security.automation.apple-events</key>
             <true/>
+            <key>com.apple.security.inherit</key>
+            <true/>
         </dict>
         </plist>
         EOF
 
-        echo "Checking keychain and certificates..."
-        security list-keychains
-        echo "Current keychain contents:"
-        security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+        # Unlock keychain
+        security unlock-keychain -p "$CERTIFICATE_PASSWORD" "$KEYCHAIN_PATH"
         
-        # Find all Developer ID Application certificates
-        echo "Looking for Developer ID certificates..."
-        CERTS=$(security find-certificate -a -c "Developer ID Application" "$KEYCHAIN_PATH" -p)
-        if [ -z "$CERTS" ]; then
-          echo "Error: No Developer ID Application certificates found"
-          exit 1
-        fi
-        
-        # Try to construct the signing identity
+        # Construct signing identity
         SIGNING_IDENTITY="Developer ID Application: Clay Nelson ($APPLE_TEAM_ID)"
         echo "Using signing identity: $SIGNING_IDENTITY"
         
-        echo "Attempting to sign with explicit identity..."
+        APP_PATH="dist/InvoiceGenerator-${{ matrix.arch }}.app"
+        echo "Signing app bundle at: $APP_PATH"
+        
+        # Sign all binaries and libraries
+        find "$APP_PATH" -type f -name "*.so" -o -name "*.dylib" | while read lib; do
+          echo "Signing library: $lib"
+          codesign --force --options runtime \
+            --sign "$SIGNING_IDENTITY" \
+            --entitlements entitlements.plist \
+            --timestamp \
+            --verbose \
+            "$lib" 2>&1
+        done
+        
+        # Sign the main executable
+        MAIN_BIN="$APP_PATH/Contents/MacOS/InvoiceGenerator"
+        if [ -f "$MAIN_BIN" ]; then
+          echo "Signing main binary: $MAIN_BIN"
+          codesign --force --options runtime \
+            --sign "$SIGNING_IDENTITY" \
+            --entitlements entitlements.plist \
+            --timestamp \
+            --verbose \
+            "$MAIN_BIN" 2>&1
+        fi
+        
+        # Finally sign the app bundle
+        echo "Signing app bundle..."
         codesign --force --options runtime \
           --sign "$SIGNING_IDENTITY" \
           --entitlements entitlements.plist \
           --timestamp \
           --verbose \
-          dist/InvoiceGenerator-${{ matrix.arch }}.app 2>&1
-
-        if [ $? -ne 0 ]; then
-          echo "First signing attempt failed, trying fallback..."
-          # Fallback to first found Developer ID
-          SIGNING_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Developer ID Application" | head -1 | cut -d '"' -f 2)
-          if [ ! -z "$SIGNING_IDENTITY" ]; then
-            echo "Attempting to sign with found identity: $SIGNING_IDENTITY"
-            codesign --force --options runtime \
-              --sign "$SIGNING_IDENTITY" \
-              --entitlements entitlements.plist \
-              --timestamp \
-              --verbose \
-              dist/InvoiceGenerator-${{ matrix.arch }}.app 2>&1
-          fi
-        fi
-
+          "$APP_PATH" 2>&1
+        
         echo "Verifying code signing..."
-        codesign --verify -vvv dist/InvoiceGenerator-${{ matrix.arch }}.app
+        codesign --verify -vvv "$APP_PATH"
         
         echo "Detailed signing info:"
-        codesign -d --verbose=4 dist/InvoiceGenerator-${{ matrix.arch }}.app
+        codesign -d --verbose=4 "$APP_PATH"
         
         echo "Checking app bundle..."
-        spctl --assess --verbose=4 dist/InvoiceGenerator-${{ matrix.arch }}.app
+        spctl --assess --verbose=4 "$APP_PATH"
 
     - name: Notarize the app
       env:
