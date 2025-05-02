@@ -254,7 +254,7 @@ jobs:
           echo "4. Invalid bundle identifier"
           
           # Get detailed log info
-          SUBMISSION_ID=$(echo "$NOTARY_OUTPUT" | grep -o 'id: [a-z0-9-]*' | head -n1 | cut -d' ' -f2 | tr -d '\n')
+          SUBMISSION_ID=$(echo "$NOTARY_OUTPUT" | grep -o 'id: [a-z0-9-]*' | head -n1 | cut -d' ' -f2 | tr -d '\n' | tr -d '\r')
           if [ ! -z "$SUBMISSION_ID" ]; then
             echo "Getting detailed log for submission $SUBMISSION_ID..."
             xcrun notarytool log "$SUBMISSION_ID" \
@@ -266,7 +266,7 @@ jobs:
         fi
         
         # Extract submission ID for status check (only first occurrence)
-        SUBMISSION_ID=$(echo "$NOTARY_OUTPUT" | grep -o 'id: [a-z0-9-]*' | head -n1 | cut -d' ' -f2 | tr -d '\n')
+        SUBMISSION_ID=$(echo "$NOTARY_OUTPUT" | grep -o 'id: [a-z0-9-]*' | head -n1 | cut -d' ' -f2 | tr -d '\n' | tr -d '\r')
         if [ ! -z "$SUBMISSION_ID" ]; then
           echo "Checking detailed status for submission $SUBMISSION_ID..."
           xcrun notarytool info "$SUBMISSION_ID" \
