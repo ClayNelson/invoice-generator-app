@@ -144,7 +144,7 @@ jobs:
     - name: Notarize the app
       env:
         APPLE_ID: ${{ secrets.APPLE_ID }}
-        APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        APPLE_TEAM_ID: "FP8F8A7LL3"  # Temporary hardcoded for testing
         APPLE_APP_PASSWORD: ${{ secrets.appleapppassword }}
       run: |
         echo "Using Team ID for notarization: $APPLE_TEAM_ID"
