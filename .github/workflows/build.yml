@@ -67,7 +67,7 @@ jobs:
           exit 1
         fi
         echo "Certificate secret length: ${#CERTIFICATE_BASE64}"
-        echo "First few characters: ${CERTIFICATE_BASE64:0:10}..."
+        echo "First few characters (safely truncated): ${CERTIFICATE_BASE64:0:10}..."
 
     - name: Install the Apple certificate
       env:
