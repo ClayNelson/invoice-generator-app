@@ -58,6 +58,17 @@ jobs:
         source venv/bin/activate
         pyinstaller --clean --windowed --name "InvoiceGenerator-${{ matrix.arch }}" invoice_app.py
 
+    - name: Debug certificate secret
+      env:
+        CERTIFICATE_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE }}
+      run: |
+        if [ -z "$CERTIFICATE_BASE64" ]; then
+          echo "Error: APPLE_DEVELOPER_ID_CERTIFICATE secret is empty"
+          exit 1
+        fi
+        echo "Certificate secret length: ${#CERTIFICATE_BASE64}"
+        echo "First few characters: ${CERTIFICATE_BASE64:0:10}..."
+
     - name: Install the Apple certificate
       env:
         CERTIFICATE_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE }}
@@ -71,11 +82,14 @@ jobs:
         security set-keychain-settings -t 3600 -l build.keychain
         
         echo "Creating certificate file..."
-        echo "$CERTIFICATE_BASE64" | base64 --decode > certificate.p12
+        # Try to detect and fix potential line breaks in the base64 string
+        echo "$CERTIFICATE_BASE64" | tr -d '\n' | base64 --decode > certificate.p12
         
         echo "Verifying certificate file..."
         if [ ! -s certificate.p12 ]; then
           echo "Error: certificate.p12 is empty"
+          echo "Debug: CERTIFICATE_BASE64 value type:"
+          echo "$CERTIFICATE_BASE64" | base64 --decode | file -
           exit 1
         fi
         
@@ -89,19 +103,7 @@ jobs:
         security import certificate.p12 \
           -k build.keychain \
           -P "$CERTIFICATE_PASSWORD" \
-          -T /usr/bin/codesign \
-          -f p12 \
-          -A
-        
-        IMPORT_RESULT=$?
-        if [ $IMPORT_RESULT -ne 0 ]; then
-          echo "Certificate import failed with code $IMPORT_RESULT"
-          echo "Trying alternative import method..."
-          security import certificate.p12 \
-            -k build.keychain \
-            -P "$CERTIFICATE_PASSWORD" \
-            -T /usr/bin/codesign
-        fi
+          -T /usr/bin/codesign
         
         echo "Setting partition list..."
         security set-key-partition-list \
