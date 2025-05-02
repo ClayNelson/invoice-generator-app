@@ -159,15 +159,29 @@ jobs:
         </plist>
         EOF
 
+        # Find the Developer ID Application certificate
+        SIGNING_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Developer ID Application" | head -1 | cut -d '"' -f 2)
+        if [ -z "$SIGNING_IDENTITY" ]; then
+          echo "Error: Could not find Developer ID Application certificate"
+          echo "Available certificates:"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+          exit 1
+        fi
+        
+        echo "Using signing identity: $SIGNING_IDENTITY"
+
         # Sign the .app bundle with hardened runtime
         codesign --force --options runtime \
-          --sign "Developer ID Application" \
+          --sign "$SIGNING_IDENTITY" \
           --entitlements entitlements.plist \
           --timestamp \
           dist/InvoiceGenerator-${{ matrix.arch }}.app
 
         # Verify signing
         codesign --verify -vvv dist/InvoiceGenerator-${{ matrix.arch }}.app
+        
+        # Show signing info
+        codesign -d --verbose=4 dist/InvoiceGenerator-${{ matrix.arch }}.app
 
     - name: Notarize the app
       env:
