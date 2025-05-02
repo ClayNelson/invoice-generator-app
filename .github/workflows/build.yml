@@ -118,10 +118,23 @@ jobs:
         echo "Cleaning up..."
         rm certificate.p12
 
+    - name: Debug Team ID
+      run: |
+        echo "Checking environment variables..."
+        echo "APPLE_TEAM_ID length: ${#APPLE_TEAM_ID}"
+        if [ -z "$APPLE_TEAM_ID" ]; then
+          echo "Error: APPLE_TEAM_ID is empty"
+        else
+          echo "APPLE_TEAM_ID value: $APPLE_TEAM_ID"
+        fi
+      env:
+        APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
     - name: Sign the app
       env:
         TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       run: |
+        echo "Using Team ID: $TEAM_ID"
         echo "Available signing identities:"
         security find-identity -v -p codesigning
         
@@ -134,6 +147,7 @@ jobs:
         APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         APPLE_APP_PASSWORD: ${{ secrets.appleapppassword }}
       run: |
+        echo "Using Team ID for notarization: $APPLE_TEAM_ID"
         cd dist
         # Create ZIP for notarization
         ditto -c -k --keepParent "InvoiceGenerator-${{ matrix.arch }}.app" "InvoiceGenerator-${{ matrix.arch }}-unnotarized.zip"
