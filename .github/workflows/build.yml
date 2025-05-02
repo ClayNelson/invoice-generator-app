@@ -120,7 +120,7 @@ jobs:
 
     - name: Sign the app
       env:
-        TEAM_ID: FP8F8A7LL3
+        TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       run: |
         echo "Available signing identities:"
         security find-identity -v -p codesigning
