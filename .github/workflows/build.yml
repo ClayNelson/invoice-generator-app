@@ -147,8 +147,9 @@ jobs:
         APPLE_TEAM_ID: "FP8F8A7LL3"
         APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
       run: |
-        echo "Using Apple ID: $APPLE_ID"
-        echo "Using Team ID: $APPLE_TEAM_ID"
+        echo "Notarization credentials:"
+        echo "Apple ID: $APPLE_ID"
+        echo "Team ID: $APPLE_TEAM_ID"
         echo "App password length: ${#APPLE_APP_PASSWORD}"
         
         cd dist
