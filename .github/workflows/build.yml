@@ -64,28 +64,44 @@ jobs:
         CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_PASSWORD }}
         KEYCHAIN_PASSWORD: ${{ github.run_id }}
       run: |
-        # Create keychain
-        security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+        echo "Setting up keychain..."
+        security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain || true
         security default-keychain -s build.keychain
         security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
-        
-        # Set keychain settings
         security set-keychain-settings -t 3600 -l build.keychain
         
-        # Import certificate with debug info
         echo "Creating certificate file..."
         echo "$CERTIFICATE_BASE64" | base64 --decode > certificate.p12
         
-        echo "Checking certificate file..."
-        ls -la certificate.p12
+        echo "Verifying certificate file..."
+        if [ ! -s certificate.p12 ]; then
+          echo "Error: certificate.p12 is empty"
+          exit 1
+        fi
+        
+        echo "Certificate file size: $(ls -l certificate.p12 | awk '{print $5}') bytes"
+        echo "File type: $(file certificate.p12)"
+        
+        echo "Current keychains:"
+        security list-keychains
         
         echo "Importing certificate..."
         security import certificate.p12 \
           -k build.keychain \
           -P "$CERTIFICATE_PASSWORD" \
           -T /usr/bin/codesign \
-          -f pkcs12 \
+          -f p12 \
           -A
+        
+        IMPORT_RESULT=$?
+        if [ $IMPORT_RESULT -ne 0 ]; then
+          echo "Certificate import failed with code $IMPORT_RESULT"
+          echo "Trying alternative import method..."
+          security import certificate.p12 \
+            -k build.keychain \
+            -P "$CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign
+        fi
         
         echo "Setting partition list..."
         security set-key-partition-list \
@@ -94,17 +110,17 @@ jobs:
           -k "$KEYCHAIN_PASSWORD" \
           build.keychain
         
-        echo "Listing keychains..."
-        security list-keychains
+        echo "Verifying certificate installation..."
+        security find-certificate -a build.keychain
         
-        # Clean up
+        echo "Cleaning up..."
         rm certificate.p12
 
     - name: Sign the app
       env:
         TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       run: |
-        # List available signing identities
+        echo "Available signing identities:"
         security find-identity -v -p codesigning
         
         cd dist
