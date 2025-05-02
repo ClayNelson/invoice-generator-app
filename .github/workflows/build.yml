@@ -63,7 +63,8 @@ jobs:
         CERTIFICATE_BASE64: ${{ secrets.CERT_P12_BASE64 }}
       run: |
         if [ -z "$CERTIFICATE_BASE64" ]; then
-          echo "Error: CERT_P12_BASE64 secret is empty"
+          echo "Error: CERT_P12_BASE64 repository secret is empty"
+          echo "Please add this in GitHub repository Settings -> Secrets and variables -> Actions"
           exit 1
         fi
         echo "Certificate secret length: ${#CERTIFICATE_BASE64}"
@@ -123,7 +124,9 @@ jobs:
         echo "Checking environment variables..."
         echo "APPLE_TEAM_ID length: ${#APPLE_TEAM_ID}"
         if [ -z "$APPLE_TEAM_ID" ]; then
-          echo "Error: APPLE_TEAM_ID is empty"
+          echo "Error: APPLE_TEAM_ID repository secret is not set"
+          echo "Please add this in GitHub repository Settings -> Secrets and variables -> Actions"
+          exit 1
         else
           echo "APPLE_TEAM_ID value: $APPLE_TEAM_ID"
         fi
@@ -149,12 +152,14 @@ jobs:
       run: |
         # Validate credentials
         if [ -z "$APPLE_ID" ]; then
-          echo "Error: APPLE_ID is not set"
+          echo "Error: APPLE_ID repository secret is not set"
+          echo "Please add this in GitHub repository Settings -> Secrets and variables -> Actions"
           exit 1
         fi
         
         if [ -z "$APPLE_APP_PASSWORD" ]; then
-          echo "Error: APPLE_APP_PASSWORD is not set"
+          echo "Error: APPLE_APP_PASSWORD repository secret is not set"
+          echo "Please add this in GitHub repository Settings -> Secrets and variables -> Actions"
           exit 1
         fi
         
@@ -163,12 +168,15 @@ jobs:
           exit 1
         fi
         
-        echo "Notarization credentials:"
+        echo "Notarization credentials (repository secrets):"
         echo "Apple ID: $APPLE_ID"
         echo "Team ID: $APPLE_TEAM_ID"
         echo "App password length: ${#APPLE_APP_PASSWORD}"
         
-        cd dist
+        echo "Notarization credentials:"
+        echo "Apple ID: $APPLE_ID"
+        echo "Team ID: $APPLE_TEAM_ID"
+        echo "App password length: ${#APPLE_APP_PASSWORD}"
         
         # Verify app exists
         if [ ! -d "InvoiceGenerator-${{ matrix.arch }}.app" ]; then
