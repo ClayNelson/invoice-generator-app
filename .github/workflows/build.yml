@@ -1,90 +1,23 @@
-name: Build and Test
+name: Build macOS App
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main ]
   workflow_dispatch:
 
-permissions:
-  contents: write
-  packages: write
-  actions: write
-
-env:
-  APP_VERSION: 1.0.0
-
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 2
-
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
-
-    - name: Install system dependencies
-      run: |
-        for i in {1..3}; do
-          sudo apt-get update && \
-          sudo apt-get install -y xvfb libxkbcommon-x11-0 libxcb-icccm4 \
-            libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 \
-            libxcb-xinerama0 libxcb-xfixes0 x11-utils libxcb-cursor0 \
-            libegl1 libopengl0 libgl1-mesa-dev && break || sleep 15
-        done
-
-    - name: Install Python dependencies
-      run: |
-        for i in {1..3}; do
-          python -m pip install --upgrade pip && \
-          pip install -r requirements.txt && break || sleep 15
-        done
-
-    - name: Run tests with coverage
-      env:
-        QT_QPA_PLATFORM: offscreen
-        DISPLAY: ":99.0"
-        XDG_RUNTIME_DIR: "/tmp/runtime-runner"
-        PYTHONPATH: "."
-      run: |
-        mkdir -p /tmp/runtime-runner
-        Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
-        sleep 3
-        pytest tests/ --cov=. --cov-report=xml -v
-
-    - name: Upload coverage reports to Codecov
-      uses: codecov/codecov-action@v4
-      env:
-        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-      with:
-        files: ./coverage.xml
-        flags: unittests
-        name: invoice-generator
-        fail_ci_if_error: false
-        verbose: true
-        directory: .
-        token: ${{ secrets.CODECOV_TOKEN }}
-
   build-macos:
-    needs: test
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
     strategy:
       matrix:
-        os: [macos-latest-xlarge, macos-14]
+        os: [macos-latest-xlarge, macos-14]  # Intel and Apple Silicon
         include:
           - os: macos-latest-xlarge
             arch: intel
           - os: macos-14
             arch: arm64
-      fail-fast: false
 
     steps:
     - uses: actions/checkout@v4
@@ -93,239 +26,91 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.10'
-        cache: 'pip'
+        architecture: 'x64'
 
-    - name: Install gettext on macOS
+    - name: Install dependencies
       run: |
-        for i in {1..3}; do
-          brew install gettext && \
-          brew link gettext --force && break || sleep 15
-        done
-
-    - name: Install Python dependencies
-      run: |
-        for i in {1..3}; do
-          python -m pip install --upgrade pip setuptools wheel && \
-          pip install -r requirements.txt && \
-          pip install pyinstaller && break || sleep 15
-        done
-
-    - name: Create Info.plist
-      run: |
-        cat > Info.plist << EOF
-        <?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-        <plist version="1.0">
-        <dict>
-            <key>CFBundleDisplayName</key>
-            <string>Invoice Generator</string>
-            <key>CFBundleExecutable</key>
-            <string>InvoiceGenerator-${{ matrix.arch }}</string>
-            <key>CFBundleIconFile</key>
-            <string>icon.icns</string>
-            <key>CFBundleIdentifier</key>
-            <string>com.claynelson.invoicegenerator</string>
-            <key>CFBundleInfoDictionaryVersion</key>
-            <string>6.0</string>
-            <key>CFBundleName</key>
-            <string>Invoice Generator</string>
-            <key>CFBundlePackageType</key>
-            <string>APPL</string>
-            <key>CFBundleShortVersionString</key>
-            <string>${{ env.APP_VERSION }}</string>
-            <key>CFBundleVersion</key>
-            <string>${{ github.run_number }}</string>
-            <key>LSMinimumSystemVersion</key>
-            <string>10.15.0</string>
-            <key>NSHighResolutionCapable</key>
-            <true/>
-        </dict>
-        </plist>
-        EOF
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
 
     - name: Build application
-      env:
-        DYLD_LIBRARY_PATH: /usr/local/opt/gettext/lib:$DYLD_LIBRARY_PATH
       run: |
-        APP_NAME="InvoiceGenerator-${{ matrix.arch }}-${{ env.APP_VERSION }}-${{ github.run_number }}"
-        pyinstaller --clean --windowed \
-          --name "$APP_NAME" \
-          --add-data "Info.plist:." \
-          invoice_app.py
+        pyinstaller --clean --windowed --name "InvoiceGenerator-${{ matrix.arch }}" invoice_app.py
 
-    - name: Import Code-Signing Certificates
+    - name: Install the Apple certificate
       env:
-        CERTIFICATE_BASE64: ${{ secrets.CERT_P12_BASE64 }}
-        CERTIFICATE_PASSWORD: ${{ secrets.CERT_PASSWORD }}
+        CERTIFICATE_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE }}
+        CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_PASSWORD }}
+        KEYCHAIN_PASSWORD: ${{ github.run_id }}
       run: |
-        # Validate required secrets
-        if [ -z "$CERTIFICATE_BASE64" ]; then
-          echo "Error: CERT_P12_BASE64 secret is not set"
-          exit 1
-        fi
+        # Create keychain
+        security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+        security default-keychain -s build.keychain
+        security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
         
-        if [ -z "$CERTIFICATE_PASSWORD" ]; then
-          echo "Error: CERT_PASSWORD secret is not set"
-          exit 1
-        fi
-        
-        # Generate a random keychain password
-        KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
-        
-        # Create temporary keychain
-        KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
-        echo "Creating keychain at $KEYCHAIN_PATH"
-        security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" || {
-          echo "Error: Failed to create keychain"
-          exit 1
-        }
-        
-        echo "Setting keychain settings"
-        security set-keychain-settings -t 3600 -l "$KEYCHAIN_PATH"
-        
-        # Import certificate to keychain
-        echo "Decoding certificate"
-        CERT_PATH="$RUNNER_TEMP/certificate.p12"
-        
-        # Try to handle both standard and URL-safe base64
-        # First, try direct decoding
-        if echo -n "$CERTIFICATE_BASE64" | base64 --decode > "$CERT_PATH" 2>/dev/null; then
-          echo "Standard base64 decode successful"
-        else
-          echo "Standard base64 decode failed, trying URL-safe conversion"
-          # Replace URL-safe characters and try again
-          echo -n "$CERTIFICATE_BASE64" | tr '_-' '/+' | base64 --decode > "$CERT_PATH" || {
-            echo "Error: Failed to decode certificate (both standard and URL-safe attempts failed)"
-            exit 1
-          }
-        fi
-        
-        echo "Verifying certificate with OpenSSL"
-        if ! openssl pkcs12 -in "$CERT_PATH" -noout -info -password pass:"$CERTIFICATE_PASSWORD"; then
-          echo "Error: OpenSSL verification failed"
-          echo "This indicates the certificate or password is invalid"
-          exit 1
-        fi
-        
-        echo "Certificate verified with OpenSSL, attempting import"
-        # Try import with explicit format
-        if ! security import "$CERT_PATH" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"; then
-          echo "First import attempt failed, trying without format specification"
-          # Try import without format specification
-          security import "$CERT_PATH" -P "$CERTIFICATE_PASSWORD" -k "$KEYCHAIN_PATH" || {
-            echo "Error: Failed to import certificate"
-            echo "Certificate path: $CERT_PATH"
-            echo "Keychain path: $KEYCHAIN_PATH"
-            ls -l "$CERT_PATH"
-            # Try to show certificate info
-            echo "Certificate details:"
-            security cms -D -i "$CERT_PATH" 2>&1 || true
-            exit 1
-          }
-        fi
-        
-        echo "Setting up keychain for codesign"
-        # Add keychain to search list
-        security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | sed s/\"//g)
-        security default-keychain -s "$KEYCHAIN_PATH"
-        security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+        # Import certificate
+        echo $CERTIFICATE_BASE64 | base64 --decode > certificate.p12
+        security import certificate.p12 -k build.keychain -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
         
         # Allow codesign to access keychain
-        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" || {
-          echo "Error: Failed to set key partition list"
-          exit 1
-        }
-        
-        # Verify certificate was imported
-        echo "Listing all certificates in keychain:"
-        security find-certificate -a "$KEYCHAIN_PATH"
+        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
         
         # Clean up
-        rm "$CERT_PATH"
-        echo "Certificate import completed successfully"
+        rm certificate.p12
 
-    - name: Sign Application
+    - name: Sign the app
+      env:
+        TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       run: |
-        APP_NAME="InvoiceGenerator-${{ matrix.arch }}-${{ env.APP_VERSION }}-${{ github.run_number }}"
-        # Sign the app bundle
-        codesign --force --options runtime --sign "Developer ID Application" \
-          --timestamp --verbose "dist/$APP_NAME/$APP_NAME.app"
-        
-        # Verify signature
-        codesign --verify --verbose "dist/$APP_NAME/$APP_NAME.app"
+        cd dist
+        codesign --force --options runtime --sign "Developer ID Application: Clay NELSON ($TEAM_ID)" "InvoiceGenerator-${{ matrix.arch }}.app"
 
-    - name: Create DMG
-      run: |
-        APP_NAME="InvoiceGenerator-${{ matrix.arch }}-${{ env.APP_VERSION }}-${{ github.run_number }}"
-        # Create a temporary DMG
-        hdiutil create -srcfolder "dist/$APP_NAME" \
-          -volname "Invoice Generator (${{ matrix.arch }})" \
-          -fs HFS+ \
-          -fsargs "-c c=64,a=16,e=16" \
-          -format UDRW \
-          "dist/$APP_NAME.dmg"
-
-    - name: Sign DMG
-      run: |
-        APP_NAME="InvoiceGenerator-${{ matrix.arch }}-${{ env.APP_VERSION }}-${{ github.run_number }}"
-        # Sign the DMG
-        codesign --force --sign "Developer ID Application" \
-          --timestamp --verbose "dist/$APP_NAME.dmg"
-
-    - name: Notarize
+    - name: Notarize the app
       env:
         APPLE_ID: ${{ secrets.APPLE_ID }}
-        APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        APPLE_APP_PASSWORD: ${{ secrets.appleapppassword }}
       run: |
-        APP_NAME="InvoiceGenerator-${{ matrix.arch }}-${{ env.APP_VERSION }}-${{ github.run_number }}"
-        
-        # Check if we have notarization credentials
-        if [ -z "$APPLE_ID" ] || [ -z "$APPLE_APP_PASSWORD" ] || [ -z "$APPLE_TEAM_ID" ]; then
-          echo "Warning: Notarization credentials not set, skipping notarization"
-          exit 0
-        fi
+        cd dist
+        # Create ZIP for notarization
+        ditto -c -k --keepParent "InvoiceGenerator-${{ matrix.arch }}.app" "InvoiceGenerator-${{ matrix.arch }}-unnotarized.zip"
         
         # Submit for notarization
-        xcrun notarytool submit "dist/$APP_NAME.dmg" \
+        xcrun notarytool submit "InvoiceGenerator-${{ matrix.arch }}-unnotarized.zip" \
           --apple-id "$APPLE_ID" \
           --password "$APPLE_APP_PASSWORD" \
           --team-id "$APPLE_TEAM_ID" \
           --wait
         
         # Staple the notarization ticket
-        xcrun stapler staple "dist/$APP_NAME.dmg"
+        xcrun stapler staple "InvoiceGenerator-${{ matrix.arch }}.app"
+        
+        # Create final ZIP
+        ditto -c -k --keepParent "InvoiceGenerator-${{ matrix.arch }}.app" "InvoiceGenerator-${{ matrix.arch }}.zip"
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: InvoiceGenerator-${{ matrix.arch }}
-        path: dist/InvoiceGenerator-${{ matrix.arch }}-${{ env.APP_VERSION }}-${{ github.run_number }}.dmg
-        retention-days: 5
+        path: dist/InvoiceGenerator-${{ matrix.arch }}.zip
         
   create-release:
     needs: build-macos
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
-    timeout-minutes: 10
-    permissions:
-      contents: write
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     
     steps:
-    - uses: actions/checkout@v4
-    
     - name: Download all artifacts
       uses: actions/download-artifact@v4
       
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: v${{ env.APP_VERSION }}-${{ github.run_number }}
-        name: Release v${{ env.APP_VERSION }}-${{ github.run_number }}
+        tag_name: v${{ github.run_number }}
+        name: Release v${{ github.run_number }}
         files: |
-          InvoiceGenerator-intel/*.dmg
-          InvoiceGenerator-arm64/*.dmg
-        prerelease: ${{ github.ref == 'refs/heads/develop' }}
-        token: ${{ secrets.GITHUB_TOKEN }}
-        draft: false
-        generate_release_notes: true
+          InvoiceGenerator-intel/*.zip
+          InvoiceGenerator-arm64/*.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
