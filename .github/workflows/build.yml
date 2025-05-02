@@ -22,16 +22,32 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install system dependencies
+    - name: Debug environment
       run: |
-        brew install gettext
-        brew link gettext --force
+        echo "Current directory: $(pwd)"
+        echo "Homebrew prefix: $(brew --prefix)"
+        echo "Python location: $(which python3)"
+        ls -la /usr/local/opt || true
+        brew config
 
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.10'
         architecture: 'x64'
+
+    - name: Install and configure gettext
+      run: |
+        brew update
+        brew install gettext
+        brew unlink gettext || true
+        brew link gettext --force
+        echo "Checking gettext installation:"
+        ls -la $(brew --prefix gettext)/lib/
+        echo "DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH"
+        echo "Adding gettext to DYLD_LIBRARY_PATH"
+        echo "$(brew --prefix gettext)/lib" >> $GITHUB_PATH
+        echo "DYLD_LIBRARY_PATH=$(brew --prefix gettext)/lib:$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
 
     - name: Install dependencies
       run: |
