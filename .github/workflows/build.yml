@@ -14,54 +14,68 @@ permissions:
 
 jobs:
   build-macos:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [macos-latest-xlarge, macos-14]  # Intel and Apple Silicon
-        include:
-          - os: macos-latest-xlarge
-            arch: intel
-          - os: macos-14
-            arch: arm64
+    runs-on: macos-14
 
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install Python and dependencies
+    - name: Install Rosetta 2
       run: |
-        brew update
-        brew install python@3.10 gettext
-        brew unlink python@3.10 && brew link python@3.10
-        brew unlink gettext && brew link gettext --force
-        
-        echo "Checking installations:"
-        echo "Python path: $(brew --prefix python@3.10)/bin/python3.10"
-        echo "Gettext path: $(brew --prefix gettext)"
-        ls -la $(brew --prefix gettext)/lib/
-        
-        # Update PATH to prioritize Python 3.10
-        echo "PATH=$(brew --prefix python@3.10)/bin:$PATH" >> $GITHUB_ENV
+        /usr/sbin/softwareupdate --install-rosetta --agree-to-license
 
-    - name: Verify Python version
+    - name: Install x86_64 Homebrew (if not present)
       run: |
-        which python3
-        python3 --version
-        python3.10 --version
+        arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || true
 
-    - name: Set up Python virtual environment
+    - name: Install x86_64 Python
       run: |
-        python3.10 -m venv venv
-        source venv/bin/activate
-        which python
-        python --version
-        python -m pip install --upgrade pip
-        python -m pip install -r requirements.txt
-        python -m pip install pyinstaller
+        arch -x86_64 /usr/local/bin/brew install python@3.9
 
-    - name: Build application
+    - name: Install dependencies (x86_64)
       run: |
-        source venv/bin/activate
-        pyinstaller --clean --windowed --name "InvoiceGenerator-${{ matrix.arch }}" invoice_app.py
+        arch -x86_64 /usr/local/opt/python@3.9/bin/python3 -m pip install --upgrade pip
+        arch -x86_64 /usr/local/opt/python@3.9/bin/python3 -m pip install -r requirements.txt pyinstaller
+
+    - name: Build app (x86_64)
+      run: |
+        arch -x86_64 /usr/local/opt/python@3.9/bin/python3 -m PyInstaller --noconfirm --windowed --name "Nelco Invoice-x86_64" --icon IMG_4309.PNG invoice_app.py
+
+    - name: Install arm64 Homebrew (if not present)
+      run: |
+        arch -arm64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || true
+
+    - name: Install arm64 Python
+      run: |
+        arch -arm64 /opt/homebrew/bin/brew install python@3.9
+
+    - name: Install dependencies (arm64)
+      run: |
+        arch -arm64 /opt/homebrew/opt/python@3.9/bin/python3 -m pip install --upgrade pip
+        arch -arm64 /opt/homebrew/opt/python@3.9/bin/python3 -m pip install -r requirements.txt pyinstaller
+
+    - name: Build app (arm64)
+      run: |
+        arch -arm64 /opt/homebrew/opt/python@3.9/bin/python3 -m PyInstaller --noconfirm --windowed --name "Nelco Invoice-arm64" --icon IMG_4309.PNG invoice_app.py
+
+    - name: Create universal2 binary
+      run: |
+        set -e
+        X86_APP="dist/Nelco Invoice-x86_64.app"
+        ARM_APP="dist/Nelco Invoice-arm64.app"
+        UNIVERSAL_APP="dist/Nelco Invoice-universal.app"
+        if [ ! -d "$X86_APP" ] || [ ! -d "$ARM_APP" ]; then
+          echo "Error: One or both .app bundles not found."
+          exit 1
+        fi
+        # Copy x86_64 app as base
+        cp -R "$X86_APP" "$UNIVERSAL_APP"
+        # Replace main binary with lipo universal binary
+        X86_BIN="$X86_APP/Contents/MacOS/Nelco Invoice-x86_64"
+        ARM_BIN="$ARM_APP/Contents/MacOS/Nelco Invoice-arm64"
+        UNIVERSAL_BIN="$UNIVERSAL_APP/Contents/MacOS/Nelco Invoice"
+        lipo -create -output "$UNIVERSAL_BIN" "$X86_BIN" "$ARM_BIN"
+        chmod +x "$UNIVERSAL_BIN"
+        echo "Universal2 .app created at $UNIVERSAL_APP"
 
     - name: Debug certificate secret
       env:
@@ -160,7 +174,7 @@ jobs:
         SIGNING_IDENTITY="Developer ID Application: Clay Nelson ($APPLE_TEAM_ID)"
         echo "Using signing identity: $SIGNING_IDENTITY"
         
-        APP_PATH="dist/InvoiceGenerator-${{ matrix.arch }}.app"
+        APP_PATH="dist/Nelco Invoice-universal.app"
         echo "Signing app bundle at: $APP_PATH"
         
         # Sign Qt frameworks first
@@ -213,7 +227,7 @@ jobs:
         done
         
         # Sign the main executable
-        MAIN_BIN="$APP_PATH/Contents/MacOS/InvoiceGenerator"
+        MAIN_BIN="$APP_PATH/Contents/MacOS/Nelco Invoice"
         if [ -f "$MAIN_BIN" ]; then
           echo "Signing main binary: $MAIN_BIN"
           codesign --force --options runtime \
@@ -277,9 +291,9 @@ jobs:
         ls -R dist/
         
         # Find the .app bundle
-        APP_PATH=$(find dist -name "InvoiceGenerator-${{ matrix.arch }}.app" -type d)
+        APP_PATH=$(find dist -name "Nelco Invoice-universal.app" -type d)
         if [ -z "$APP_PATH" ]; then
-          echo "Error: InvoiceGenerator-${{ matrix.arch }}.app not found"
+          echo "Error: Nelco Invoice-universal.app not found"
           echo "Contents of dist directory:"
           ls -la dist
           exit 1
@@ -290,18 +304,18 @@ jobs:
         
         echo "Creating notarization package..."
         # Create ZIP for notarization
-        ditto -c -k --keepParent "$(basename "$APP_PATH")" "InvoiceGenerator-${{ matrix.arch }}-unnotarized.zip"
+        ditto -c -k --keepParent "$(basename "$APP_PATH")" "Nelco-Invoice-unnotarized.zip"
         
-        if [ ! -f "InvoiceGenerator-${{ matrix.arch }}-unnotarized.zip" ]; then
+        if [ ! -f "Nelco-Invoice-unnotarized.zip" ]; then
           echo "Error: Failed to create notarization package"
           exit 1
         fi
         
-        echo "Package size: $(ls -lh "InvoiceGenerator-${{ matrix.arch }}-unnotarized.zip" | awk '{print $5}')"
+        echo "Package size: $(ls -lh "Nelco-Invoice-unnotarized.zip" | awk '{print $5}')"
         
         echo "Submitting for notarization..."
         # Submit for notarization with detailed output
-        NOTARY_OUTPUT=$(xcrun notarytool submit "InvoiceGenerator-${{ matrix.arch }}-unnotarized.zip" \
+        NOTARY_OUTPUT=$(xcrun notarytool submit "Nelco-Invoice-unnotarized.zip" \
           --apple-id "$APPLE_ID" \
           --password "$APPLE_APP_PASSWORD" \
           --team-id "$APPLE_TEAM_ID" \
@@ -360,21 +374,46 @@ jobs:
         
         echo "Creating final package..."
         # Create final ZIP
-        ditto -c -k --keepParent "$(basename "$APP_PATH")" "InvoiceGenerator-${{ matrix.arch }}.zip"
+        ditto -c -k --keepParent "$(basename "$APP_PATH")" "Nelco-Invoice.zip"
         
-        if [ ! -f "InvoiceGenerator-${{ matrix.arch }}.zip" ]; then
+        if [ ! -f "Nelco-Invoice.zip" ]; then
           echo "Error: Failed to create final package"
           exit 1
         fi
         
         echo "Notarization process completed successfully"
 
+    - name: Create DMG installer
+      run: |
+        APP_PATH="dist/Nelco Invoice-universal.app"
+        DMG_NAME="Nelco-Invoice.dmg"
+        if [ -d "$APP_PATH" ]; then
+          echo "Creating DMG at $DMG_NAME from $APP_PATH..."
+          hdiutil create -volname "Nelco Invoice" -srcfolder "$APP_PATH" -ov -format UDZO "$DMG_NAME"
+          echo "DMG created: $DMG_NAME"
+        else
+          echo "Error: $APP_PATH does not exist!"
+          exit 1
+        fi
+
+    - name: Upload DMG artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Nelco-Invoice-macOS-universal-dmg
+        path: Nelco-Invoice.dmg
+
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: InvoiceGenerator-${{ matrix.arch }}
-        path: dist/InvoiceGenerator-${{ matrix.arch }}.zip
-        
+        name: Nelco-Invoice-macOS-universal
+        path: Nelco-Invoice.zip
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Nelco-Invoice-macOS-x86_64
+        path: Nelco-Invoice-x86_64.zip
+
   create-release:
     needs: build-macos
     runs-on: ubuntu-latest
@@ -390,7 +429,6 @@ jobs:
         tag_name: v${{ github.run_number }}
         name: Release v${{ github.run_number }}
         files: |
-          InvoiceGenerator-intel/*.zip
-          InvoiceGenerator-arm64/*.zip
+          Nelco-Invoice-macOS-universal/*.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
